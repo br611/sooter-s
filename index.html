@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBER BLASTAR</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #05050d;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            border: 2px solid #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+            background-color: #020208;
+        }
+
+        #gameCanvas {
+            display: block;
+        }
+
+        .screen-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 13, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #theme-title, .screen-overlay h1 {
+            font-size: 3.5rem;
+            color: #ff0055;
+            text-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        #gameover-screen h1 {
+            color: #ff3333;
+            text-shadow: 0 0 10px #ff3333, 0 0 20px #ff3333;
+        }
+
+        #theme-tagline, .screen-overlay p {
+            font-size: 1.1rem;
+            color: #00ffaa;
+            margin-bottom: 30px;
+            max-width: 500px;
+            line-height: 1.4;
+        }
+
+        .btn-launch {
+            background: transparent;
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            padding: 15px 40px;
+            font-size: 1.4rem;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            text-shadow: 0 0 5px #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .btn-launch:hover {
+            background: #00ffff;
+            color: #020208;
+            box-shadow: 0 0 25px #00ffff;
+        }
+
+        .hud-display {
+            position: absolute;
+            top: 20px;
+            left: 25px;
+            right: 25px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .hud-label {
+            font-size: 1.4rem;
+            font-weight: bold;
+            text-shadow: 0 0 5px #00ffff;
+            letter-spacing: 1px;
+        }
+        
+        .score { color: #00ffff; }
+        #ui-shield { color: #00ffaa; transition: color 0.3s ease; }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <!-- Main Rendering Layer -->
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <!-- Menu Interfaces -->
+    <div id="start-screen" class="screen-overlay">
+        <h1 id="theme-title">CYBER BLASTAR</h1>
+        <p id="theme-tagline">Neutralize system errors before they breach the firewall.</p>
+        <button class="btn-launch" onclick="beginSimulation()">BOOT SYSTEMS</button>
+    </div>
+
+    <div id="gameover-screen" class="screen-overlay hidden">
+        <h1>CRITICAL BREACH</h1>
+        <p>The core firewall infrastructure was compromised.</p>
+        <button class="btn-launch" onclick="restartSimulation()">REBOOT FIRMWARE</button>
+    </div>
+
+    <!-- Real-Time Metrics Overlay -->
+    <div class="hud-display">
+        <div class="hud-label score">SCORE: <span id="ui-score">0</span></div>
+        <div class="hud-label">SHIELD: <span id="ui-shield">100%</span></div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    
+    // UI Elements
+    const startScreen = document.getElementById("start-screen");
+    const gameoverScreen = document.getElementById("gameover-screen");
+    const uiScore = document.getElementById("ui-score");
+    const uiShield = document.getElementById("ui-shield");
+
+    // Game Core State
+    let gameActive = false;
+    let score = 0;
+    let shield = 100;
+    let keys = {};
+    let player, lasers, enemies, particles;
+
+    // Handle Keyboard Inputs
+    window.addEventListener("keydown", (e) => {
+        if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+            e.preventDefault(); // Stop window scrolling
+        }
+        keys[e.code] = true;
+    });
+    window.addEventListener("keyup", (e) => keys[e.code] = false);
+
+    function beginSimulation() {
+        startScreen.classList.add("hidden");
+        initGame();
+    }
+
+    function restartSimulation() {
+        gameoverScreen.classList.add("hidden");
+        initGame();
+    }
+
+    function initGame() {
+        score = 0;
+        shield = 100;
+        uiScore.innerText = score;
+        uiShield.innerText = "100%";
+        uiShield.style.color = "#00ffaa";
+        
+        player = {
+            x: canvas.width / 2 - 20,
+            y: canvas.height - 70,
+            width: 40,
+            height: 32,
+            speed: 7,
+            cooldown: 0
+        };
+        
+        lasers = [];
+        enemies = [];
+        particles = [];
+        gameActive = true;
+        
+        gameLoop();
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        // Player Controls (A/D or Left/Right Arrow keys)
+        if ((keys["ArrowLeft"] || keys["KeyA"]) && player.x > 0) {
+            player.x -= player.speed;
+        }
+        if ((keys["ArrowRight"] || keys["KeyD"]) && player.x < canvas.width - player.width) {
+            player.x += player.speed;
+        }
+        
+        // Weapon System (Spacebar to shoot)
+        if (keys["Space"] && player.cooldown <= 0) {
+            lasers.push({ 
+                x: player.x + player.width / 2 - 2, 
+                y: player.y, 
+                width: 4, 
+                height: 16, 
+                speed: 9 
+            });
+            player.cooldown = 12; // Lower value = faster fire rate
+        }
+        if (player.cooldown > 0) player.cooldown--;
+
+        // Weapon Handling
+        for (let i = lasers.length - 1; i >= 0; i--) {
+            lasers[i].y -= lasers[i].speed;
+            if (lasers[i].y < -20) lasers.splice(i, 1);
+        }
+
+        // Enemy Logic Spawning (System Glitches)
+        if (Math.random() < 0.035) {
+            enemies.push({
+                x: Math.random() * (canvas.width - 30),
+                y: -40,
+                width: 32,
+                height: 32,
+                speed: 2 + Math.random() * 3.5
+            });
+        }
+
+        // Threat Mitigation Engine
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            enemies[i].y += enemies[i].speed;
+
+            // Target missed: Reached firewall baseline
+            if (enemies[i].y > canvas.height) {
+                enemies.splice(i, 1);
+                takeDamage(20);
+                continue;
+            }
+
+            // Direct Impact Collision
+            if (checkCollision(enemies[i], player)) {
+                createExplosion(enemies[i].x + 16, enemies[i].y + 16, "#ff3333");
+                enemies.splice(i, 1);
+                takeDamage(15);
+                continue;
+            }
+
+            // Tactical Laser Neutralization
+            for (let j = lasers.length - 1; j >= 0; j--) {
+                if (checkCollision(lasers[j], enemies[i])) {
+                    createExplosion(enemies[i].x + 16, enemies[i].y + 16, "#00ffaa");
+                    enemies.splice(i, 1);
+                    lasers.splice(j, 1);
+                    score += 100;
+                    uiScore.innerText = score;
+                    break;
+                }
+            }
+        }
+
+        // Visual Artifact Update (Particles)
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].x += particles[i].vx;
+            particles[i].y += particles[i].vy;
+            particles[i].alpha -= 0.025;
+            if (particles[i].alpha <= 0) particles.splice(i, 1);
+        }
+    }
+
+    function draw() {
+        // Refresh display background layer
+        ctx.fillStyle = "#020208";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (!gameActive) return;
+
+        // Render Security Node (Player Ship)
+        ctx.fillStyle = "#00ffff";
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = "#00ffff";
+        ctx.beginPath();
+        ctx.moveTo(player.x + player.width / 2, player.y);
+        ctx.lineTo(player.x + player.width, player.y + player.height);
+        ctx.lineTo(player.x, player.y + player.height);
+        ctx.closePath();
+        ctx.fill();
+
+        // Render Countermeasures (Lasers)
+        ctx.fillStyle = "#ffff00";
+        ctx.shadowColor = "#ffff00";
+        lasers.forEach(laser => {
+            ctx.fillRect(laser.x, laser.y, laser.width, laser.height);
+        });
+
+        // Render Intruder Threat Nodes (Enemy Glitches)
+        ctx.fillStyle = "#ff0055";
+        ctx.shadowColor = "#ff0055";
+        enemies.forEach(enemy => {
+            ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(enemy.x + 6, enemy.y + 6, enemy.width - 12, enemy.height - 12);
+        });
+
+        // Render Debris (Explosion FX)
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.globalAlpha = p.alpha;
